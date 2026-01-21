@@ -269,27 +269,7 @@ def get_disk_info(use_color=True, bar_width=40):
     return lines
 
 
-def get_disk_info(use_color=True, bar_width=40):
-    """Get disk usage information - minimal"""
-    partitions = psutil.disk_partitions()
-    cyan = Colors.CYAN if use_color else ''
-    white = Colors.WHITE if use_color else ''
-    reset = Colors.RESET if use_color else ''
-
-    lines = []
-    for partition in partitions:
-        try:
-            usage = psutil.disk_usage(partition.mountpoint)
-            percent = usage.percent
-            lines.append(f"{cyan}{partition.device}{reset} ({partition.mountpoint}): {draw_bar_ascii(percent, 100, bar_width, use_color)} {white}{format_bytes(usage.used)}/{format_bytes(usage.total)}{reset}")
-        except PermissionError:
-            # Skip partitions we can't access
-            continue
-
-    return lines
-
-
-def get_net_info(use_color=True, bar_width=40):
+def get_net_info(use_color=True, bar_width=40, interface_filter=None):
     """Get network usage information - minimal"""
     global _LAST_NET_IO_COUNTERS
     global _LAST_NET_TIME
@@ -311,10 +291,22 @@ def get_net_info(use_color=True, bar_width=40):
     time_diff = current_time - _LAST_NET_TIME
     if time_diff == 0:
         lines.append(f"{magenta}NET{reset}:  Time difference is zero, cannot calculate speed.")
+        _LAST_NET_IO_COUNTERS = current_net_io # Update for next iteration
+        _LAST_NET_TIME = current_time # Update for next iteration
         return lines
 
-    for interface, current_stats in current_net_io.items():
-        if interface in _LAST_NET_IO_COUNTERS:
+    interfaces_to_show = []
+    if interface_filter and interface_filter is not True: # If a specific interface name is provided
+        if interface_filter in current_net_io:
+            interfaces_to_show.append(interface_filter)
+        else:
+            lines.append(f"{Colors.RED}Error: Interface '{interface_filter}' not found.{reset}")
+    else: # Show all interfaces
+        interfaces_to_show = current_net_io.keys()
+
+    for interface in interfaces_to_show:
+        if interface in _LAST_NET_IO_COUNTERS and interface in current_net_io:
+            current_stats = current_net_io[interface]
             last_stats = _LAST_NET_IO_COUNTERS[interface]
             
             # Bytes transferred
@@ -340,7 +332,7 @@ def get_net_info(use_color=True, bar_width=40):
             if link_speed_bps > 0:
                 upload_percent = (upload_speed_bps / link_speed_bps) * 100
                 download_percent = (download_speed_bps / link_speed_bps) * 100
-
+            
             # Ensure percentage does not exceed 100 (can happen if speed is reported inaccurately or bursts)
             upload_percent = min(upload_percent, 100.0)
             download_percent = min(download_percent, 100.0)
@@ -356,7 +348,7 @@ def get_net_info(use_color=True, bar_width=40):
     return lines
 
 
-def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=True, interval=250, use_color=True):
+def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=False, interval=250, use_color=True):
     """Main monitoring loop - minimal version"""
     interval_sec = interval / 1000.0
     first_run = True
@@ -408,9 +400,9 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_
                 lines.extend(get_disk_info(use_color, bar_width=40))
 
             # Network info
-            if show_net:
+            if show_net: # show_net can be True or an interface name
                 lines.append("")
-                lines.extend(get_net_info(use_color, bar_width=40))
+                lines.extend(get_net_info(use_color, bar_width=40, interface_filter=show_net))
 
 
 
@@ -510,8 +502,11 @@ Additional Information:
 
     parser.add_argument(
         '--net',
-        action='store_true',
-        help='Display only network usage information (requires --interval to be set to a reasonable value, e.g., 250ms or more).'
+        nargs='?', # 0 or 1 argument
+        const=True, # Value if --net is present without argument
+        default=False, # Value if --net is not present
+        metavar='INTERFACE',
+        help='Display only network usage information. Optionally specify an INTERFACE name to monitor a specific one (e.g., --net Ethernet). If no interface is specified, all will be shown.'
     )
 
     parser.add_argument(
@@ -549,12 +544,12 @@ Additional Information:
 
     # Determine what to show
     # If no specific display options are selected, show all (CPU, MEM, DISKS, NET)
-    any_specific_display_selected = args.cpu or args.mem or args.disks or args.net
+    any_specific_display_selected = args.cpu or args.mem or args.disks or args.net is not False
     
     show_cpu = args.cpu or not any_specific_display_selected
     show_mem = args.mem or not any_specific_display_selected
     show_disks = args.disks or not any_specific_display_selected
-    show_net = args.net or not any_specific_display_selected
+    show_net = args.net or (not any_specific_display_selected and args.net is False) # show_net will be True or an interface name, or False
 
     # Determine display options
     use_color = not args.mono
@@ -570,6 +565,7 @@ Additional Information:
 
 _LAST_NET_IO_COUNTERS = None
 _LAST_NET_TIME = None
+
 
 
 if __name__ == '__main__':
