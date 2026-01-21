@@ -10,13 +10,14 @@ import time
 import os
 import platform # Added platform import
 import ctypes # Added ctypes import
+import socket # Added socket import
 from datetime import datetime
 
 # === AUTHOR =================================================
 __AUTHOR__ = 'Igor Brzezek'
 __AUTHOR_EMAIL__ = 'igor.brzezek@gmail.com'
 __AUTHOR_GITHUB__ = 'github.com/igorbrzezek'
-__VERSION__ = "0.0.1"
+__VERSION__ = "0.0.2"
 __DATE__ = '21.01.2026'
 # ============================================================
 
@@ -139,6 +140,47 @@ def display_sysinfo():
     sys.exit(0) # Exit after displaying sysinfo
  
  
+def display_netlist():
+    """Displays information about all network interfaces and then exits."""
+    info_lines = []
+    info_lines.append(f"{Colors.BOLD}Network Interfaces:{Colors.RESET}")
+
+    interfaces = psutil.net_if_addrs()
+    stats = psutil.net_if_stats()
+
+    if not interfaces:
+        info_lines.append("  No network interfaces found.")
+    else:
+        for iface_name, iface_addrs in interfaces.items():
+            info_lines.append(f"\n{Colors.BLUE}  Interface: {iface_name}{Colors.RESET}")
+            
+            # Display status
+            if iface_name in stats:
+                stat = stats[iface_name]
+                info_lines.append(f"    Status: {'Up' if stat.isup else 'Down'}")
+                info_lines.append(f"    Duplex: {str(stat.duplex).split('.')[-1].capitalize() if stat.duplex else 'N/A'}")
+                info_lines.append(f"    Speed: {stat.speed} Mbps")
+                info_lines.append(f"    MTU: {stat.mtu}")
+            else:
+                info_lines.append("    Status: N/A (No stats available)")
+
+            # Display addresses
+            for addr in iface_addrs:
+                if addr.family == psutil.AF_LINK: # MAC address
+                    info_lines.append(f"    MAC Address: {addr.address}")
+                elif addr.family == socket.AF_INET: # IPv4
+                    info_lines.append(f"    IPv4 Address: {addr.address}")
+                    info_lines.append(f"    Netmask: {addr.netmask}")
+                    info_lines.append(f"    Broadcast: {addr.broadcast}")
+                elif addr.family == socket.AF_INET6: # IPv6
+                    info_lines.append(f"    IPv6 Address: {addr.address}")
+                    info_lines.append(f"    IPv6 Netmask: {addr.netmask}")
+
+    for line in info_lines:
+        print(line)
+    sys.exit(0)
+
+ 
 def get_stable_cpu_percent(samples=3, delay=0.1):
     """Get averaged CPU percent for stability"""
     percents = []
@@ -227,7 +269,94 @@ def get_disk_info(use_color=True, bar_width=40):
     return lines
 
 
-def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, interval=250, use_color=True):
+def get_disk_info(use_color=True, bar_width=40):
+    """Get disk usage information - minimal"""
+    partitions = psutil.disk_partitions()
+    cyan = Colors.CYAN if use_color else ''
+    white = Colors.WHITE if use_color else ''
+    reset = Colors.RESET if use_color else ''
+
+    lines = []
+    for partition in partitions:
+        try:
+            usage = psutil.disk_usage(partition.mountpoint)
+            percent = usage.percent
+            lines.append(f"{cyan}{partition.device}{reset} ({partition.mountpoint}): {draw_bar_ascii(percent, 100, bar_width, use_color)} {white}{format_bytes(usage.used)}/{format_bytes(usage.total)}{reset}")
+        except PermissionError:
+            # Skip partitions we can't access
+            continue
+
+    return lines
+
+
+def get_net_info(use_color=True, bar_width=40):
+    """Get network usage information - minimal"""
+    global _LAST_NET_IO_COUNTERS
+    global _LAST_NET_TIME
+
+    current_net_io = psutil.net_io_counters(pernic=True)
+    current_time = time.time()
+    
+    lines = []
+    magenta = Colors.MAGENTA if use_color else ''
+    white = Colors.WHITE if use_color else ''
+    reset = Colors.RESET if use_color else ''
+
+    if _LAST_NET_IO_COUNTERS is None or _LAST_NET_TIME is None:
+        _LAST_NET_IO_COUNTERS = current_net_io
+        _LAST_NET_TIME = current_time
+        lines.append(f"{magenta}NET{reset}:  Waiting for first sample...")
+        return lines
+
+    time_diff = current_time - _LAST_NET_TIME
+    if time_diff == 0:
+        lines.append(f"{magenta}NET{reset}:  Time difference is zero, cannot calculate speed.")
+        return lines
+
+    for interface, current_stats in current_net_io.items():
+        if interface in _LAST_NET_IO_COUNTERS:
+            last_stats = _LAST_NET_IO_COUNTERS[interface]
+            
+            # Bytes transferred
+            bytes_sent_diff = current_stats.bytes_sent - last_stats.bytes_sent
+            bytes_recv_diff = current_stats.bytes_recv - last_stats.bytes_recv
+
+            # Speed in Bytes/second
+            upload_speed_bps = bytes_sent_diff / time_diff
+            download_speed_bps = bytes_recv_diff / time_diff
+
+            # Get interface speed for percentage calculation
+            net_stats = psutil.net_if_stats()
+            link_speed_mbps = 0
+            if interface in net_stats:
+                link_speed_mbps = net_stats[interface].speed # in Mbps
+
+            # Convert link speed to Bytes/second (Mbps -> Bytes/s)
+            # 1 Mbps = 1,000,000 bits/s = 125,000 Bytes/s
+            link_speed_bps = link_speed_mbps * 125000 
+            
+            upload_percent = 0
+            download_percent = 0
+            if link_speed_bps > 0:
+                upload_percent = (upload_speed_bps / link_speed_bps) * 100
+                download_percent = (download_speed_bps / link_speed_bps) * 100
+
+            # Ensure percentage does not exceed 100 (can happen if speed is reported inaccurately or bursts)
+            upload_percent = min(upload_percent, 100.0)
+            download_percent = min(download_percent, 100.0)
+            
+            lines.append(f"{magenta} {interface} U/D{reset}: "
+                         f"{draw_bar_ascii(upload_percent, 100, bar_width // 2, use_color)} "
+                         f"{white}{format_bytes(upload_speed_bps)}/s{reset} "
+                         f"{draw_bar_ascii(download_percent, 100, bar_width // 2, use_color)} "
+                         f"{white}{format_bytes(download_speed_bps)}/s{reset}")
+
+    _LAST_NET_IO_COUNTERS = current_net_io
+    _LAST_NET_TIME = current_time
+    return lines
+
+
+def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=True, interval=250, use_color=True):
     """Main monitoring loop - minimal version"""
     interval_sec = interval / 1000.0
     first_run = True
@@ -278,6 +407,12 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, inter
                 lines.append("")
                 lines.extend(get_disk_info(use_color, bar_width=40))
 
+            # Network info
+            if show_net:
+                lines.append("")
+                lines.extend(get_net_info(use_color, bar_width=40))
+
+
 
 
             # Build output
@@ -327,6 +462,8 @@ Examples:
   python umon.py --cpu             Show only CPU information
   python umon.py --mem             Show only memory (RAM and SWAP) information
   python umon.py --disks           Show only disk usage information
+  python umon.py --net             Show only network usage information
+  python umon.py --netlist         List all network interfaces and their details, then exit
   python umon.py --interval 100    Update every 100 milliseconds
   python umon.py --mono            Monochrome mode (no colors)
   python umon.py --cpu --interval 500  CPU only with 500ms refresh rate
@@ -372,6 +509,18 @@ Additional Information:
     )
 
     parser.add_argument(
+        '--net',
+        action='store_true',
+        help='Display only network usage information (requires --interval to be set to a reasonable value, e.g., 250ms or more).'
+    )
+
+    parser.add_argument(
+        '--netlist',
+        action='store_true',
+        help='List all network interfaces and their details, then exit.'
+    )
+
+    parser.add_argument(
         '--mono',
         action='store_true',
         help='Run in monochrome mode, disabling all ANSI color output.'
@@ -381,7 +530,7 @@ Additional Information:
         '--interval',
         type=int,
         default=250,
-        help='Set the refresh interval for updating statistics, in milliseconds (default: 250ms).'
+        help='Set the refresh interval for updating statistics, in milliseconds (default: 250ms). Minimum 50ms.'
     )
 
     parser.add_argument(
@@ -394,23 +543,36 @@ Additional Information:
     
     if args.sysinfo:
         display_sysinfo()
+    
+    if args.netlist:
+        display_netlist()
 
     # Determine what to show
-    show_cpu = args.cpu or (not args.cpu and not args.mem and not args.disks)
-    show_mem = args.mem or (not args.cpu and not args.mem and not args.disks)
-    show_disks = args.disks or (not args.cpu and not args.mem and not args.disks)
+    # If no specific display options are selected, show all (CPU, MEM, DISKS, NET)
+    any_specific_display_selected = args.cpu or args.mem or args.disks or args.net
+    
+    show_cpu = args.cpu or not any_specific_display_selected
+    show_mem = args.mem or not any_specific_display_selected
+    show_disks = args.disks or not any_specific_display_selected
+    show_net = args.net or not any_specific_display_selected
 
     # Determine display options
     use_color = not args.mono
 
     # Validate interval
     if args.interval < 50:
-        print("Warning: interval should be at least 50ms")
+        print("Warning: interval should be at least 50ms. Setting to 50ms.")
         args.interval = 50
 
     # Start monitoring
-    display_monitor_minimal(show_cpu, show_mem, show_disks, args.interval, use_color)
+    display_monitor_minimal(show_cpu, show_mem, show_disks, show_net, args.interval, use_color)
+
+
+_LAST_NET_IO_COUNTERS = None
+_LAST_NET_TIME = None
 
 
 if __name__ == '__main__':
+    _LAST_NET_IO_COUNTERS = None
+    _LAST_NET_TIME = None
     main()
