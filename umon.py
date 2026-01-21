@@ -1,0 +1,416 @@
+#!/usr/bin/env python3
+"""
+System Monitor - htop-like utility written in Python
+Monitors CPU and memory usage with color support and TUI
+"""
+
+import argparse
+import sys
+import time
+import os
+import platform # Added platform import
+import ctypes # Added ctypes import
+from datetime import datetime
+
+# === AUTHOR =================================================
+__AUTHOR__ = 'Igor Brzezek'
+__AUTHOR_EMAIL__ = 'igor.brzezek@gmail.com'
+__AUTHOR_GITHUB__ = 'github.com/igorbrzezek'
+__VERSION__ = "0.0.1"
+__DATE__ = '21.01.2026'
+# ============================================================
+
+# Fix Unicode encoding on Windows
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+try:
+    import psutil
+except ImportError:
+    print("Error: psutil is required. Install it with: pip install psutil")
+    sys.exit(1)
+
+# Enable ANSI colors on Windows
+try:
+    from colorama import init
+    init(autoreset=False)
+except ImportError:
+    pass
+
+
+class Colors:
+    """ANSI color codes"""
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+    RESET = '\033[0m'
+
+
+def get_color_for_percentage(percentage, use_color=True):
+    """Return appropriate color based on percentage"""
+    if not use_color:
+        return ''
+
+    if percentage < 33:
+        return Colors.GREEN
+    elif percentage < 66:
+        return Colors.YELLOW
+    else:
+        return Colors.RED
+
+
+def draw_bar_ascii(value, max_val=100, width=20, use_color=True):
+    """Draw an ASCII progress bar"""
+    percentage = (value / max_val) * 100
+    filled = int((percentage / 100) * width)
+
+    color = get_color_for_percentage(percentage, use_color)
+    reset = Colors.RESET if use_color else ''
+    cyan = Colors.CYAN if use_color else ''
+    white = Colors.WHITE if use_color else ''
+
+    filled_part = f"{color}{'#' * filled}{reset}"
+    empty_part = f"{white}{'-' * (width - filled)}{reset}"
+
+    return f"{cyan}[{reset}{filled_part}{empty_part}{cyan}]{reset} {percentage:5.1f}%"
+
+
+def format_bytes(bytes_val):
+    """Format bytes to human-readable format"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if bytes_val < 1024:
+            return f"{bytes_val:.1f}{unit}"
+        bytes_val /= 1024
+    return f"{bytes_val:.1f}PB"
+ 
+def display_sysinfo():
+    """Displays comprehensive system information and then exits."""
+    info_lines = []
+    
+    info_lines.append(f"{Colors.BOLD}System Information:{Colors.RESET}")
+    info_lines.append(f"  OS Name: {platform.system()}")
+    info_lines.append(f"  OS Release: {platform.release()}")
+    info_lines.append(f"  OS Version: {platform.version()}")
+    info_lines.append(f"  Machine: {platform.machine()}")
+    info_lines.append(f"  Processor: {platform.processor()}")
+    info_lines.append(f"  Python Version: {platform.python_version()}")
+    info_lines.append(f"  Python Build: {platform.python_build()}")
+    info_lines.append(f"  Platform: {platform.platform()}")
+
+    if psutil:
+        try:
+            info_lines.append(f"\n{Colors.BOLD}CPU Information (via psutil):{Colors.RESET}")
+            info_lines.append(f"  Physical Cores: {psutil.cpu_count(logical=False)}")
+            info_lines.append(f"  Logical Cores: {psutil.cpu_count(logical=True)}")
+            cpu_freq = psutil.cpu_freq()
+            if cpu_freq:
+                info_lines.append(f"  Current Freq: {cpu_freq.current:.2f} Mhz")
+                info_lines.append(f"  Min Freq: {cpu_freq.min:.2f} Mhz")
+                info_lines.append(f"  Max Freq: {cpu_freq.max:.2f} Mhz")
+            
+            info_lines.append(f"\n{Colors.BOLD}Memory Information (via psutil):{Colors.RESET}")
+            vm = psutil.virtual_memory()
+            info_lines.append(f"  Total: {format_bytes(vm.total)}")
+            info_lines.append(f"  Available: {format_bytes(vm.available)}")
+            info_lines.append(f"  Used: {format_bytes(vm.used)}")
+            info_lines.append(f"  Percentage: {vm.percent:.2f}%")
+
+            sm = psutil.swap_memory()
+            info_lines.append(f"\n{Colors.BOLD}Swap Information (via psutil):{Colors.RESET}")
+            info_lines.append(f"  Total: {format_bytes(sm.total)}")
+            info_lines.append(f"  Used: {format_bytes(sm.used)}")
+            info_lines.append(f"  Free: {format_bytes(sm.free)}")
+            info_lines.append(f"  Percentage: {sm.percent:.2f}%")
+
+        except Exception as e:
+            info_lines.append(f"  (Error gathering psutil info: {e})")
+    else:
+        info_lines.append("\n(psutil not available for detailed info)")
+
+    for line in info_lines:
+        print(line)
+    sys.exit(0) # Exit after displaying sysinfo
+ 
+ 
+def get_stable_cpu_percent(samples=3, delay=0.1):
+    """Get averaged CPU percent for stability"""
+    percents = []
+    for _ in range(samples):
+        percents.append(psutil.cpu_percent(interval=None))
+        time.sleep(delay)
+    return sum(percents) / len(percents) if percents else 0
+
+def get_stable_per_core(samples=3, delay=0.1):
+    """Get averaged per-core CPU percent"""
+    cores_list = []
+    for _ in range(samples):
+        cores = psutil.cpu_percent(interval=None, percpu=True)
+        if not cores_list:
+            cores_list = [[] for _ in cores]
+        for i, p in enumerate(cores):
+            cores_list[i].append(p)
+        time.sleep(delay)
+    return [sum(core) / len(core) for core in cores_list]
+
+def get_cpu_info(use_color=True):
+    """Get CPU information - minimal"""
+    # Use averaged readings for stability
+    cpu_percent = get_stable_cpu_percent()
+    cpu_count = psutil.cpu_count(logical=True)
+
+    blue = Colors.BLUE if use_color else ''
+    white = Colors.WHITE if use_color else ''
+    reset = Colors.RESET if use_color else ''
+
+    lines = []
+    lines.append(f"{blue}CPU{reset} ({cpu_count} cores): {draw_bar_ascii(cpu_percent, 100, 20, use_color)}")
+
+    # Per-core usage - show all cores with individual bars
+    per_core = get_stable_per_core()
+    cores_per_row = 3
+
+    for row_start in range(0, len(per_core), cores_per_row):
+        row_end = min(row_start + cores_per_row, len(per_core))
+        cores_line = ""
+
+        for i in range(row_start, row_end):
+            core_percent = per_core[i]
+            bar = draw_bar_ascii(core_percent, 100, 12, use_color)
+            cores_line += f"{white}#{i:2d}:{reset}{bar}  "
+
+        lines.append(cores_line.rstrip())
+
+    return lines
+
+
+def get_memory_info(use_color=True, bar_width=40):
+    """Get memory information - minimal"""
+    ram = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+
+    green = Colors.GREEN if use_color else ''
+    yellow = Colors.YELLOW if use_color else ''
+    white = Colors.WHITE if use_color else ''
+    reset = Colors.RESET if use_color else ''
+
+    lines = []
+    lines.append(f"{green}RAM{reset}:  {draw_bar_ascii(ram.percent, 100, bar_width, use_color)} {white}{format_bytes(ram.used)}/{format_bytes(ram.total)}{reset}")
+    lines.append(f"{yellow}SWAP{reset}: {draw_bar_ascii(swap.percent, 100, bar_width, use_color)} {white}{format_bytes(swap.used)}/{format_bytes(swap.total)}{reset}")
+
+    return lines
+
+
+def get_disk_info(use_color=True, bar_width=40):
+    """Get disk usage information - minimal"""
+    partitions = psutil.disk_partitions()
+    cyan = Colors.CYAN if use_color else ''
+    white = Colors.WHITE if use_color else ''
+    reset = Colors.RESET if use_color else ''
+
+    lines = []
+    for partition in partitions:
+        try:
+            usage = psutil.disk_usage(partition.mountpoint)
+            percent = usage.percent
+            lines.append(f"{cyan}{partition.device}{reset} ({partition.mountpoint}): {draw_bar_ascii(percent, 100, bar_width, use_color)} {white}{format_bytes(usage.used)}/{format_bytes(usage.total)}{reset}")
+        except PermissionError:
+            # Skip partitions we can't access
+            continue
+
+    return lines
+
+
+def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, interval=250, use_color=True):
+    """Main monitoring loop - minimal version"""
+    interval_sec = interval / 1000.0
+    first_run = True
+
+    try:
+        # Enter alternate screen buffer to avoid scrolling main terminal
+        sys.stdout.write('\033[?1049h')
+        # Hide cursor
+        sys.stdout.write('\033[?25l')
+        sys.stdout.flush()
+
+        while True:
+            lines = []
+
+            # Title
+            magenta = Colors.MAGENTA if use_color else ''
+            white = Colors.WHITE if use_color else ''
+            bold = Colors.BOLD if use_color else ''
+            dim = Colors.DIM if use_color else ''
+            reset = Colors.RESET if use_color else ''
+
+            program_title = "System Monitor"
+            current_time = datetime.now().strftime('%H:%M:%S')
+
+            # Calculate padding for centering
+            total_width = 60 # width of the '=' bar
+            title_time_str = f"{program_title} {current_time}"
+            padding_needed = total_width - len(title_time_str)
+            left_padding = padding_needed // 2
+            right_padding = total_width - len(title_time_str) - left_padding
+
+            lines.append(f"{magenta}{'=' * total_width}{reset}")
+            lines.append(f"{bold}{Colors.CYAN}{' ' * left_padding}{program_title}{reset} {dim}{white}{current_time}{reset}{' ' * right_padding}{bold}{Colors.CYAN}{reset}")
+            lines.append(f"{magenta}{'=' * total_width}{reset}")
+
+            # CPU info
+            if show_cpu:
+                lines.append("")
+                lines.extend(get_cpu_info(use_color))
+
+            # Memory info
+            if show_mem:
+                lines.append("")
+                lines.extend(get_memory_info(use_color, bar_width=40))
+
+            # Disk info
+            if show_disks:
+                lines.append("")
+                lines.extend(get_disk_info(use_color, bar_width=40))
+
+
+
+            # Build output
+            output = '\n'.join(lines)
+
+            # Always clear screen and position to home, then write output
+            sys.stdout.write('\033[H\033[2J')  # Home and clear entire screen
+            sys.stdout.write(output + '\n')
+
+            if first_run:
+                first_run = False
+
+            sys.stdout.flush()
+            time.sleep(interval_sec)
+
+    except KeyboardInterrupt:
+        # Show cursor again
+        sys.stdout.write('\033[?25h')
+        # Exit alternate screen buffer
+        sys.stdout.write('\033[?1049l')
+        sys.stdout.flush()
+        print("\n\nMonitoring stopped. Press Ctrl-C again to terminate forcefully.")
+        sys.exit(0)
+
+
+def main():
+    # Custom action to handle -h with short help
+    class OneLineHelpAction(argparse.Action):
+        def __init__(self, option_strings, dest, **kwargs):
+            super().__init__(option_strings, dest, nargs=0, **kwargs)
+        
+        def __call__(self, parser, namespace, values, option_string=None):
+            version_info = f"umon.py v{__VERSION__} by {__AUTHOR__} ({__DATE__})"
+            options_summary = "[--cpu] [--mem] [--disks] [--mono] [--interval MS] [--sysinfo]"
+            print(f"Usage: python umon.py {options_summary} | -h | --help")
+            print(f"Info: {version_info}. For detailed help, use 'python umon.py --help'.")
+            parser.exit()
+    
+    parser = argparse.ArgumentParser(
+        prog='umon.py',
+        description='System Monitor - A htop-like utility written in Python for monitoring CPU and memory usage with color support and TUI.',
+        formatter_class=argparse.RawTextHelpFormatter,
+        add_help=False,
+        epilog=f"""
+Examples:
+  python umon.py                   Show CPU, memory, and disks (default, colorful)
+  python umon.py --cpu             Show only CPU information
+  python umon.py --mem             Show only memory (RAM and SWAP) information
+  python umon.py --disks           Show only disk usage information
+  python umon.py --interval 100    Update every 100 milliseconds
+  python umon.py --mono            Monochrome mode (no colors)
+  python umon.py --cpu --interval 500  CPU only with 500ms refresh rate
+  python umon.py --sysinfo         Display detailed system information and exit
+
+Additional Information:
+  Author: {__AUTHOR__} <{__AUTHOR_EMAIL__}>
+  GitHub: {__AUTHOR_GITHUB__}
+  Version: {__VERSION__}
+  Date: {__DATE__}
+        """
+    )
+
+    parser.add_argument(
+        '-h',
+        action=OneLineHelpAction,
+        help='Show program info and options in one line.'
+    )
+
+    parser.add_argument(
+        '--help',
+        action='help',
+        default=argparse.SUPPRESS,
+        help='Show this detailed help message, including descriptions of all options and examples.'
+    )
+
+    parser.add_argument(
+        '--cpu',
+        action='store_true',
+        help='Display only CPU usage information.'
+    )
+
+    parser.add_argument(
+        '--mem',
+        action='store_true',
+        help='Display only memory (RAM and SWAP) usage information.'
+    )
+
+    parser.add_argument(
+        '--disks',
+        action='store_true',
+        help='Display only disk usage information for all mounted partitions.'
+    )
+
+    parser.add_argument(
+        '--mono',
+        action='store_true',
+        help='Run in monochrome mode, disabling all ANSI color output.'
+    )
+
+    parser.add_argument(
+        '--interval',
+        type=int,
+        default=250,
+        help='Set the refresh interval for updating statistics, in milliseconds (default: 250ms).'
+    )
+
+    parser.add_argument(
+        '--sysinfo',
+        action='store_true',
+        help='Display detailed system information and exit.'
+    )
+
+    args = parser.parse_args()
+    
+    if args.sysinfo:
+        display_sysinfo()
+
+    # Determine what to show
+    show_cpu = args.cpu or (not args.cpu and not args.mem and not args.disks)
+    show_mem = args.mem or (not args.cpu and not args.mem and not args.disks)
+    show_disks = args.disks or (not args.cpu and not args.mem and not args.disks)
+
+    # Determine display options
+    use_color = not args.mono
+
+    # Validate interval
+    if args.interval < 50:
+        print("Warning: interval should be at least 50ms")
+        args.interval = 50
+
+    # Start monitoring
+    display_monitor_minimal(show_cpu, show_mem, show_disks, args.interval, use_color)
+
+
+if __name__ == '__main__':
+    main()
