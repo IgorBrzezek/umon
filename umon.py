@@ -4,13 +4,17 @@ System Monitor - htop-like utility written in Python
 Monitors CPU and memory usage with color support and TUI
 """
 
+"""
+CHANGELOG
+"""
+
 import argparse
 import sys
 import time
 import os
-import platform # Added platform import
-import ctypes # Added ctypes import
-import socket # Added socket import
+import platform  # Added platform import
+import ctypes  # Added ctypes import
+import socket  # Added socket import
 from datetime import datetime
 
 # === AUTHOR =================================================
@@ -80,7 +84,7 @@ def draw_bar_ascii(value, max_val=100, width=20, use_color=True):
     filled_part = f"{color}{'#' * filled}{reset}"
     empty_part = f"{white}{'-' * (width - filled)}{reset}"
 
-    return f"{cyan}[{reset}{filled_part}{empty_part}{cyan}]{reset} {percentage:5.1f}%"
+    return f"{cyan}[{reset}{filled_part}{empty_part}{cyan}]{reset} {percentage:.1f}%"
 
 
 def format_bytes(bytes_val):
@@ -90,11 +94,12 @@ def format_bytes(bytes_val):
             return f"{bytes_val:.1f}{unit}"
         bytes_val /= 1024
     return f"{bytes_val:.1f}PB"
- 
+
+
 def display_sysinfo():
     """Displays comprehensive system information and then exits."""
     info_lines = []
-    
+
     info_lines.append(f"{Colors.BOLD}System Information:{Colors.RESET}")
     info_lines.append(f"  OS Name: {platform.system()}")
     info_lines.append(f"  OS Release: {platform.release()}")
@@ -107,16 +112,21 @@ def display_sysinfo():
 
     if psutil:
         try:
-            info_lines.append(f"\n{Colors.BOLD}CPU Information (via psutil):{Colors.RESET}")
-            info_lines.append(f"  Physical Cores: {psutil.cpu_count(logical=False)}")
-            info_lines.append(f"  Logical Cores: {psutil.cpu_count(logical=True)}")
+            info_lines.append(
+                f"\n{Colors.BOLD}CPU Information (via psutil):{Colors.RESET}")
+            info_lines.append(
+                f"  Physical Cores: {psutil.cpu_count(logical=False)}")
+            info_lines.append(
+                f"  Logical Cores: {psutil.cpu_count(logical=True)}")
             cpu_freq = psutil.cpu_freq()
             if cpu_freq:
-                info_lines.append(f"  Current Freq: {cpu_freq.current:.2f} Mhz")
+                info_lines.append(
+                    f"  Current Freq: {cpu_freq.current:.2f} Mhz")
                 info_lines.append(f"  Min Freq: {cpu_freq.min:.2f} Mhz")
                 info_lines.append(f"  Max Freq: {cpu_freq.max:.2f} Mhz")
-            
-            info_lines.append(f"\n{Colors.BOLD}Memory Information (via psutil):{Colors.RESET}")
+
+            info_lines.append(
+                f"\n{Colors.BOLD}Memory Information (via psutil):{Colors.RESET}")
             vm = psutil.virtual_memory()
             info_lines.append(f"  Total: {format_bytes(vm.total)}")
             info_lines.append(f"  Available: {format_bytes(vm.available)}")
@@ -124,7 +134,8 @@ def display_sysinfo():
             info_lines.append(f"  Percentage: {vm.percent:.2f}%")
 
             sm = psutil.swap_memory()
-            info_lines.append(f"\n{Colors.BOLD}Swap Information (via psutil):{Colors.RESET}")
+            info_lines.append(
+                f"\n{Colors.BOLD}Swap Information (via psutil):{Colors.RESET}")
             info_lines.append(f"  Total: {format_bytes(sm.total)}")
             info_lines.append(f"  Used: {format_bytes(sm.used)}")
             info_lines.append(f"  Free: {format_bytes(sm.free)}")
@@ -137,9 +148,9 @@ def display_sysinfo():
 
     for line in info_lines:
         print(line)
-    sys.exit(0) # Exit after displaying sysinfo
- 
- 
+    sys.exit(0)  # Exit after displaying sysinfo
+
+
 def display_netlist():
     """Displays information about all network interfaces and then exits."""
     info_lines = []
@@ -152,13 +163,16 @@ def display_netlist():
         info_lines.append("  No network interfaces found.")
     else:
         for iface_name, iface_addrs in interfaces.items():
-            info_lines.append(f"\n{Colors.BLUE}  Interface: {iface_name}{Colors.RESET}")
-            
+            info_lines.append(
+                f"\n{Colors.BLUE}  Interface: {iface_name}{Colors.RESET}")
+
             # Display status
             if iface_name in stats:
                 stat = stats[iface_name]
-                info_lines.append(f"    Status: {'Up' if stat.isup else 'Down'}")
-                info_lines.append(f"    Duplex: {str(stat.duplex).split('.')[-1].capitalize() if stat.duplex else 'N/A'}")
+                info_lines.append(
+                    f"    Status: {'Up' if stat.isup else 'Down'}")
+                info_lines.append(
+                    f"    Duplex: {str(stat.duplex).split('.')[-1].capitalize() if stat.duplex else 'N/A'}")
                 info_lines.append(f"    Speed: {stat.speed} Mbps")
                 info_lines.append(f"    MTU: {stat.mtu}")
             else:
@@ -166,13 +180,13 @@ def display_netlist():
 
             # Display addresses
             for addr in iface_addrs:
-                if addr.family == psutil.AF_LINK: # MAC address
+                if addr.family == psutil.AF_LINK:  # MAC address
                     info_lines.append(f"    MAC Address: {addr.address}")
-                elif addr.family == socket.AF_INET: # IPv4
+                elif addr.family == socket.AF_INET:  # IPv4
                     info_lines.append(f"    IPv4 Address: {addr.address}")
                     info_lines.append(f"    Netmask: {addr.netmask}")
                     info_lines.append(f"    Broadcast: {addr.broadcast}")
-                elif addr.family == socket.AF_INET6: # IPv6
+                elif addr.family == socket.AF_INET6:  # IPv6
                     info_lines.append(f"    IPv6 Address: {addr.address}")
                     info_lines.append(f"    IPv6 Netmask: {addr.netmask}")
 
@@ -180,7 +194,7 @@ def display_netlist():
         print(line)
     sys.exit(0)
 
- 
+
 def get_stable_cpu_percent(samples=3, delay=0.1):
     """Get averaged CPU percent for stability"""
     percents = []
@@ -188,6 +202,7 @@ def get_stable_cpu_percent(samples=3, delay=0.1):
         percents.append(psutil.cpu_percent(interval=None))
         time.sleep(delay)
     return sum(percents) / len(percents) if percents else 0
+
 
 def get_stable_per_core(samples=3, delay=0.1):
     """Get averaged per-core CPU percent"""
@@ -201,7 +216,8 @@ def get_stable_per_core(samples=3, delay=0.1):
         time.sleep(delay)
     return [sum(core) / len(core) for core in cores_list]
 
-def get_cpu_info(use_color=True):
+
+def get_cpu_info(use_color=True, bar_width=20, mode='normal'):
     """Get CPU information - minimal"""
     # Use averaged readings for stability
     cpu_percent = get_stable_cpu_percent()
@@ -211,25 +227,33 @@ def get_cpu_info(use_color=True):
     white = Colors.WHITE if use_color else ''
     reset = Colors.RESET if use_color else ''
 
-    lines = []
-    lines.append(f"{blue}CPU{reset} ({cpu_count} cores): {draw_bar_ascii(cpu_percent, 100, 20, use_color)}")
+    if mode == 'list':
+        lines = []
+        per_core = get_stable_per_core()
+        for i, percent in enumerate(per_core):
+            lines.append(f"CPU {i:2d}: {draw_bar_ascii(percent, 100, bar_width, use_color)}")
+        return lines
+    else:
+        lines = []
+        lines.append(
+            f"{blue}CPU{reset} ({cpu_count} cores): {draw_bar_ascii(cpu_percent, 100, bar_width, use_color)}")
 
-    # Per-core usage - show all cores with individual bars
-    per_core = get_stable_per_core()
-    cores_per_row = 3
+        # Per-core usage - show all cores with individual bars
+        per_core = get_stable_per_core()
+        cores_per_row = 3
 
-    for row_start in range(0, len(per_core), cores_per_row):
-        row_end = min(row_start + cores_per_row, len(per_core))
-        cores_line = ""
+        for row_start in range(0, len(per_core), cores_per_row):
+            row_end = min(row_start + cores_per_row, len(per_core))
+            cores_line = ""
 
-        for i in range(row_start, row_end):
-            core_percent = per_core[i]
-            bar = draw_bar_ascii(core_percent, 100, 12, use_color)
-            cores_line += f"{white}#{i:2d}:{reset}{bar}  "
+            for i in range(row_start, row_end):
+                core_percent = per_core[i]
+                bar = draw_bar_ascii(core_percent, 100, bar_width, use_color)
+                cores_line += f"{white}#{i:2d}:{reset}{bar}  "
 
-        lines.append(cores_line.rstrip())
-
-    return lines
+            lines.append(cores_line.rstrip())
+        
+        return lines
 
 
 def get_memory_info(use_color=True, bar_width=40):
@@ -243,8 +267,9 @@ def get_memory_info(use_color=True, bar_width=40):
     reset = Colors.RESET if use_color else ''
 
     lines = []
-    lines.append(f"{green}RAM{reset}:  {draw_bar_ascii(ram.percent, 100, bar_width, use_color)} {white}{format_bytes(ram.used)}/{format_bytes(ram.total)}{reset}")
-    lines.append(f"{yellow}SWAP{reset}: {draw_bar_ascii(swap.percent, 100, bar_width, use_color)} {white}{format_bytes(swap.used)}/{format_bytes(swap.total)}{reset}")
+    lines.append(
+        f'{"RAM:  ":<8}{draw_bar_ascii(ram.percent, 100, bar_width, use_color)} {white}{format_bytes(ram.used)}/{format_bytes(ram.total)}{reset}')
+    lines.append(f'{"SWAP: ":<8}{draw_bar_ascii(swap.percent, 100, bar_width, use_color)} {white}{format_bytes(swap.used)}/{format_bytes(swap.total)}{reset}')
 
     return lines
 
@@ -276,7 +301,7 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
 
     current_net_io = psutil.net_io_counters(pernic=True)
     current_time = time.time()
-    
+
     lines = []
     magenta = Colors.MAGENTA if use_color else ''
     white = Colors.WHITE if use_color else ''
@@ -290,25 +315,27 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
 
     time_diff = current_time - _LAST_NET_TIME
     if time_diff == 0:
-        lines.append(f"{magenta}NET{reset}:  Time difference is zero, cannot calculate speed.")
-        _LAST_NET_IO_COUNTERS = current_net_io # Update for next iteration
-        _LAST_NET_TIME = current_time # Update for next iteration
+        lines.append(
+            f"{magenta}NET{reset}:  Time difference is zero, cannot calculate speed.")
+        _LAST_NET_IO_COUNTERS = current_net_io  # Update for next iteration
+        _LAST_NET_TIME = current_time  # Update for next iteration
         return lines
 
     interfaces_to_show = []
-    if interface_filter and interface_filter is not True: # If a specific interface name is provided
+    if interface_filter and interface_filter is not True:  # If a specific interface name is provided
         if interface_filter in current_net_io:
             interfaces_to_show.append(interface_filter)
         else:
-            lines.append(f"{Colors.RED}Error: Interface '{interface_filter}' not found.{reset}")
-    else: # Show all interfaces
+            lines.append(
+                f"{Colors.RED}Error: Interface '{interface_filter}' not found.{reset}")
+    else:  # Show all interfaces
         interfaces_to_show = current_net_io.keys()
 
     for interface in interfaces_to_show:
         if interface in _LAST_NET_IO_COUNTERS and interface in current_net_io:
             current_stats = current_net_io[interface]
             last_stats = _LAST_NET_IO_COUNTERS[interface]
-            
+
             # Bytes transferred
             bytes_sent_diff = current_stats.bytes_sent - last_stats.bytes_sent
             bytes_recv_diff = current_stats.bytes_recv - last_stats.bytes_recv
@@ -319,37 +346,35 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
 
             # Get interface speed for percentage calculation
             net_stats = psutil.net_if_stats()
+            # Get interface speed and determine label suffix
             link_speed_mbps = 0
-            if interface in net_stats:
-                link_speed_mbps = net_stats[interface].speed # in Mbps
+            link_speed_bps = 0
+            link_speed_label_suffix = ""
 
-            # Convert link speed to Bytes/second (Mbps -> Bytes/s)
-            # 1 Mbps = 1,000,000 bits/s = 125,000 Bytes/s
-            link_speed_bps = link_speed_mbps * 125000 
-            
+            if interface in net_stats and net_stats[interface].speed:
+                    link_speed_mbps = net_stats[interface].speed  # in Mbps
+                    link_speed_bps = link_speed_mbps * 125000
+                    link_speed_label_suffix = f" ({link_speed_mbps} Mbps)"
+            else:
+                link_speed_label_suffix = " (Unknown Speed)"
+
             upload_percent = 0
             download_percent = 0
             if link_speed_bps > 0:
-                upload_percent = (upload_speed_bps / link_speed_bps) * 100
-                download_percent = (download_speed_bps / link_speed_bps) * 100
-            
-            # Ensure percentage does not exceed 100 (can happen if speed is reported inaccurately or bursts)
-            upload_percent = min(upload_percent, 100.0)
-            download_percent = min(download_percent, 100.0)
-            
-            lines.append(f"{magenta} {interface} Upload{reset}: "
-                         f"{draw_bar_ascii(upload_percent, 100, bar_width, use_color)} "
-                         f"{white}{format_bytes(upload_speed_bps)}/s{reset}")
-            lines.append(f"{magenta} {interface} Download{reset}: "
-                         f"{draw_bar_ascii(download_percent, 100, bar_width, use_color)} "
-                         f"{white}{format_bytes(download_speed_bps)}/s{reset}")
+                 upload_percent = (upload_speed_bps / link_speed_bps) * 100
+                 download_percent = (download_speed_bps / link_speed_bps) * 100
+                 upload_percent = min(upload_percent, 100.0)
+                 download_percent = min(download_percent, 100.0)
+
+                 lines.append(f'{"DN:":<8}{draw_bar_ascii(download_percent, 100, bar_width, use_color)} {white}{format_bytes(download_speed_bps)}/s{reset}')
+                 lines.append(f'{"UP:":<8}{draw_bar_ascii(upload_percent, 100, bar_width, use_color)} {white}{format_bytes(upload_speed_bps)}/s{reset}')
 
     _LAST_NET_IO_COUNTERS = current_net_io
     _LAST_NET_TIME = current_time
     return lines
 
 
-def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=False, interval=250, use_color=True):
+def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=False, interval=250, use_color=True, show_cpulist=False):
     """Main monitoring loop - minimal version"""
     interval_sec = interval / 1000.0
     first_run = True
@@ -371,7 +396,7 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_
             dim = Colors.DIM if use_color else ''
             reset = Colors.RESET if use_color else ''
 
-            program_title = "System Monitor"
+            program_title = f"System Monitor (v{VERSION})"
             current_time = datetime.now().strftime('%H:%M:%S')
 
             # Calculate padding for centering
@@ -388,25 +413,26 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_
             # CPU info
             if show_cpu:
                 lines.append("")
-                lines.extend(get_cpu_info(use_color))
+                mode = 'list' if show_cpulist else 'normal'
+                lines.extend(get_cpu_info(use_color, bar_width=30, mode=mode))
 
             # Memory info
             if show_mem:
                 lines.append("")
-                lines.extend(get_memory_info(use_color, bar_width=40))
+                lines.extend(get_memory_info(use_color, bar_width=30))
 
             # Disk info
             if show_disks:
                 lines.append("")
-                lines.extend(get_disk_info(use_color, bar_width=40))
+                lines.extend(get_disk_info(use_color, bar_width=30))
 
             # Network info
             if show_net: # show_net can be True or an interface name
                 lines.append("")
-                lines.extend(get_net_info(use_color, bar_width=40, interface_filter=show_net))
+                lines.extend(get_net_info(use_color, bar_width=30, interface_filter=show_net))
 
-
-
+            lines.append("")
+            lines.append("Press Ctrl+C to quit.")
 
             # Build output
             output = '\n'.join(lines)
@@ -513,7 +539,12 @@ Additional Information:
     parser.add_argument(
         '--netlist',
         action='store_true',
-        help='List all network interfaces and their details, then exit.'
+        help='Display network interface list and exit.'
+    )
+    parser.add_argument(
+        '--cpulist',
+        action='store_true',
+        help='Show CPU cores as a list with bars.'
     )
 
     parser.add_argument(
@@ -545,9 +576,9 @@ Additional Information:
 
     # Determine what to show
     # If no specific display options are selected, show all (CPU, MEM, DISKS, NET)
-    any_specific_display_selected = args.cpu or args.mem or args.disks or args.net is not False
+    any_specific_display_selected = args.cpu or args.mem or args.disks or args.net is not False or args.cpulist
     
-    show_cpu = args.cpu or not any_specific_display_selected
+    show_cpu = args.cpu or args.cpulist or not any_specific_display_selected
     show_mem = args.mem or not any_specific_display_selected
     show_disks = args.disks or not any_specific_display_selected
     show_net = args.net or (not any_specific_display_selected and args.net is False) # show_net will be True or an interface name, or False
@@ -561,7 +592,7 @@ Additional Information:
         args.interval = 50
 
     # Start monitoring
-    display_monitor_minimal(show_cpu, show_mem, show_disks, show_net, args.interval, use_color)
+    display_monitor_minimal(show_cpu, show_mem, show_disks, show_net, args.interval, use_color, show_cpulist=args.cpulist)
 
 
 _LAST_NET_IO_COUNTERS = None
