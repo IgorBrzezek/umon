@@ -25,6 +25,8 @@ __VERSION__ = "0.0.2"
 __DATE__ = '21.01.2026'
 # ============================================================
 
+VERSION = __VERSION__
+
 # Fix Unicode encoding on Windows
 if sys.platform == 'win32':
     import io
