@@ -337,10 +337,11 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
             upload_percent = min(upload_percent, 100.0)
             download_percent = min(download_percent, 100.0)
             
-            lines.append(f"{magenta} {interface} U/D{reset}: "
-                         f"{draw_bar_ascii(upload_percent, 100, bar_width // 2, use_color)} "
-                         f"{white}{format_bytes(upload_speed_bps)}/s{reset} "
-                         f"{draw_bar_ascii(download_percent, 100, bar_width // 2, use_color)} "
+            lines.append(f"{magenta} {interface} Upload{reset}: "
+                         f"{draw_bar_ascii(upload_percent, 100, bar_width, use_color)} "
+                         f"{white}{format_bytes(upload_speed_bps)}/s{reset}")
+            lines.append(f"{magenta} {interface} Download{reset}: "
+                         f"{draw_bar_ascii(download_percent, 100, bar_width, use_color)} "
                          f"{white}{format_bytes(download_speed_bps)}/s{reset}")
 
     _LAST_NET_IO_COUNTERS = current_net_io
