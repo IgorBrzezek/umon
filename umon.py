@@ -12,6 +12,7 @@ import argparse
 import sys
 import time
 import os
+import csv
 import platform  # Added platform import
 import ctypes  # Added ctypes import
 import socket  # Added socket import
@@ -21,8 +22,8 @@ from datetime import datetime
 __AUTHOR__ = 'Igor Brzezek'
 __AUTHOR_EMAIL__ = 'igor.brzezek@gmail.com'
 __AUTHOR_GITHUB__ = 'github.com/igorbrzezek'
-__VERSION__ = "0.0.2"
-__DATE__ = '21.01.2026'
+__VERSION__ = "0.0.3"
+__DATE__ = '04.02.2026'
 # ============================================================
 
 VERSION = __VERSION__
@@ -225,6 +226,10 @@ def get_cpu_info(use_color=True, bar_width=20, mode='normal'):
     cpu_percent = get_stable_cpu_percent()
     cpu_count = psutil.cpu_count(logical=True)
 
+    data = {}
+    data['cpu_total_percent'] = cpu_percent
+    data['cpu_count'] = cpu_count
+
     blue = Colors.BLUE if use_color else ''
     white = Colors.WHITE if use_color else ''
     reset = Colors.RESET if use_color else ''
@@ -234,7 +239,8 @@ def get_cpu_info(use_color=True, bar_width=20, mode='normal'):
         per_core = get_stable_per_core()
         for i, percent in enumerate(per_core):
             lines.append(f"CPU {i:2d}: {draw_bar_ascii(percent, 100, bar_width, use_color)}")
-        return lines
+            data[f'cpu_core_{i}_percent'] = percent
+        return lines, data
     else:
         lines = []
         lines.append(
@@ -243,6 +249,9 @@ def get_cpu_info(use_color=True, bar_width=20, mode='normal'):
         # Per-core usage - show all cores with individual bars
         per_core = get_stable_per_core()
         cores_per_row = 3
+
+        for i, percent in enumerate(per_core):
+             data[f'cpu_core_{i}_percent'] = percent
 
         for row_start in range(0, len(per_core), cores_per_row):
             row_end = min(row_start + cores_per_row, len(per_core))
@@ -255,13 +264,22 @@ def get_cpu_info(use_color=True, bar_width=20, mode='normal'):
 
             lines.append(cores_line.rstrip())
         
-        return lines
+        return lines, data
 
 
 def get_memory_info(use_color=True, bar_width=40):
     """Get memory information - minimal"""
     ram = psutil.virtual_memory()
     swap = psutil.swap_memory()
+
+    data = {
+        'ram_total': ram.total,
+        'ram_used': ram.used,
+        'ram_percent': ram.percent,
+        'swap_total': swap.total,
+        'swap_used': swap.used,
+        'swap_percent': swap.percent
+    }
 
     green = Colors.GREEN if use_color else ''
     yellow = Colors.YELLOW if use_color else ''
@@ -273,7 +291,7 @@ def get_memory_info(use_color=True, bar_width=40):
         f'{"RAM:  ":<8}{draw_bar_ascii(ram.percent, 100, bar_width, use_color)} {white}{format_bytes(ram.used)}/{format_bytes(ram.total)}{reset}')
     lines.append(f'{"SWAP: ":<8}{draw_bar_ascii(swap.percent, 100, bar_width, use_color)} {white}{format_bytes(swap.used)}/{format_bytes(swap.total)}{reset}')
 
-    return lines
+    return lines, data
 
 
 def get_disk_info(use_color=True, bar_width=40):
@@ -284,16 +302,21 @@ def get_disk_info(use_color=True, bar_width=40):
     reset = Colors.RESET if use_color else ''
 
     lines = []
+    data = {}
     for partition in partitions:
         try:
             usage = psutil.disk_usage(partition.mountpoint)
             percent = usage.percent
             lines.append(f"{cyan}{partition.device}{reset} ({partition.mountpoint}): {draw_bar_ascii(percent, 100, bar_width, use_color)} {white}{format_bytes(usage.used)}/{format_bytes(usage.total)}{reset}")
+            
+            data[f'disk_{partition.mountpoint}_percent'] = percent
+            data[f'disk_{partition.mountpoint}_used'] = usage.used
+            data[f'disk_{partition.mountpoint}_total'] = usage.total
         except PermissionError:
             # Skip partitions we can't access
             continue
 
-    return lines
+    return lines, data
 
 
 def get_net_info(use_color=True, bar_width=40, interface_filter=None):
@@ -313,7 +336,7 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
         _LAST_NET_IO_COUNTERS = current_net_io
         _LAST_NET_TIME = current_time
         lines.append(f"{magenta}NET{reset}:  Waiting for first sample...")
-        return lines
+        return lines, {}
 
     time_diff = current_time - _LAST_NET_TIME
     if time_diff == 0:
@@ -321,7 +344,7 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
             f"{magenta}NET{reset}:  Time difference is zero, cannot calculate speed.")
         _LAST_NET_IO_COUNTERS = current_net_io  # Update for next iteration
         _LAST_NET_TIME = current_time  # Update for next iteration
-        return lines
+        return lines, {}
 
     interfaces_to_show = []
     if interface_filter and interface_filter is not True:  # If a specific interface name is provided
@@ -333,6 +356,7 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
     else:  # Show all interfaces
         interfaces_to_show = current_net_io.keys()
 
+    data = {}
     for interface in interfaces_to_show:
         if interface in _LAST_NET_IO_COUNTERS and interface in current_net_io:
             current_stats = current_net_io[interface]
@@ -345,6 +369,9 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
             # Speed in Bytes/second
             upload_speed_bps = bytes_sent_diff / time_diff
             download_speed_bps = bytes_recv_diff / time_diff
+            
+            data[f'net_{interface}_rx_bps'] = download_speed_bps
+            data[f'net_{interface}_tx_bps'] = upload_speed_bps
 
             # Get interface speed for percentage calculation
             net_stats = psutil.net_if_stats()
@@ -373,13 +400,23 @@ def get_net_info(use_color=True, bar_width=40, interface_filter=None):
 
     _LAST_NET_IO_COUNTERS = current_net_io
     _LAST_NET_TIME = current_time
-    return lines
+    return lines, data
 
 
-def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=False, interval=250, use_color=True, show_cpulist=False):
+def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_net=False, interval=250, use_color=True, show_cpulist=False, log_file=None):
     """Main monitoring loop - minimal version"""
     interval_sec = interval / 1000.0
     first_run = True
+
+    csv_file = None
+    csv_writer = None
+    
+    if log_file:
+        try:
+            csv_file = open(log_file, 'w', newline='')
+        except Exception as e:
+            print(f"Error opening log file: {e}")
+            sys.exit(1)
 
     try:
         # Enter alternate screen buffer to avoid scrolling main terminal
@@ -390,6 +427,9 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_
 
         while True:
             lines = []
+            log_data_row = {}
+            if log_file:
+                log_data_row['timestamp'] = datetime.now().isoformat()
 
             # Title
             magenta = Colors.MAGENTA if use_color else ''
@@ -416,22 +456,53 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_
             if show_cpu:
                 lines.append("")
                 mode = 'list' if show_cpulist else 'normal'
-                lines.extend(get_cpu_info(use_color, bar_width=30, mode=mode))
+                cpu_lines, cpu_data = get_cpu_info(use_color, bar_width=30, mode=mode)
+                lines.extend(cpu_lines)
+                if log_file: log_data_row.update(cpu_data)
 
             # Memory info
             if show_mem:
                 lines.append("")
-                lines.extend(get_memory_info(use_color, bar_width=30))
+                mem_lines, mem_data = get_memory_info(use_color, bar_width=30)
+                lines.extend(mem_lines)
+                if log_file: log_data_row.update(mem_data)
 
             # Disk info
             if show_disks:
                 lines.append("")
-                lines.extend(get_disk_info(use_color, bar_width=30))
+                disk_lines, disk_data = get_disk_info(use_color, bar_width=30)
+                lines.extend(disk_lines)
+                if log_file: log_data_row.update(disk_data)
 
             # Network info
             if show_net: # show_net can be True or an interface name
                 lines.append("")
-                lines.extend(get_net_info(use_color, bar_width=30, interface_filter=show_net))
+                net_lines, net_data = get_net_info(use_color, bar_width=30, interface_filter=show_net)
+                lines.extend(net_lines)
+                if log_file: log_data_row.update(net_data)
+
+            # CSV Logging
+            if log_file:
+                should_log = True
+                # If network monitoring is requested but no data yet (first run), skip logging row
+                if show_net and not any(k.startswith('net_') for k in log_data_row.keys()):
+                    should_log = False
+                
+                if should_log:
+                    if csv_writer is None:
+                        fieldnames = list(log_data_row.keys())
+                        csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                        csv_writer.writeheader()
+                    
+                    try:
+                        csv_writer.writerow(log_data_row)
+                        csv_file.flush()
+                    except ValueError:
+                        # Handle case where new keys appear (e.g. new disk)
+                        # Filter row to match existing fieldnames
+                        filtered_row = {k: v for k, v in log_data_row.items() if k in csv_writer.fieldnames}
+                        csv_writer.writerow(filtered_row)
+                        csv_file.flush()
 
             lines.append("")
             lines.append("Press Ctrl+C to quit.")
@@ -450,6 +521,8 @@ def display_monitor_minimal(show_cpu=True, show_mem=True, show_disks=True, show_
             time.sleep(interval_sec)
 
     except KeyboardInterrupt:
+        if csv_file:
+            csv_file.close()
         # Show cursor again
         sys.stdout.write('\033[?25h')
         # Exit alternate screen buffer
@@ -467,7 +540,7 @@ def main():
         
         def __call__(self, parser, namespace, values, option_string=None):
             version_info = f"umon.py v{__VERSION__} by {__AUTHOR__} ({__DATE__})"
-            options_summary = "[--cpu] [--mem] [--disks] [--mono] [--interval MS] [--sysinfo]"
+            options_summary = "[--cpu] [--mem] [--disks] [--mono] [--interval MS] [--sysinfo] [--log FILENAME]"
             print(f"Usage: python umon.py {options_summary} | -h | --help")
             print(f"Info: {version_info}. For detailed help, use 'python umon.py --help'.")
             parser.exit()
@@ -489,6 +562,7 @@ Examples:
   python umon.py --mono            Monochrome mode (no colors)
   python umon.py --cpu --interval 500  CPU only with 500ms refresh rate
   python umon.py --sysinfo         Display detailed system information and exit
+  python umon.py --log system.csv  Log monitored data to system.csv
 
 Additional Information:
   Author: {__AUTHOR__} <{__AUTHOR_EMAIL__}>
@@ -568,6 +642,12 @@ Additional Information:
         help='Display detailed system information and exit.'
     )
 
+    parser.add_argument(
+        '--log',
+        metavar='FILENAME',
+        help='Log gathered data to a CSV file.'
+    )
+
     args = parser.parse_args()
     
     if args.sysinfo:
@@ -594,7 +674,7 @@ Additional Information:
         args.interval = 50
 
     # Start monitoring
-    display_monitor_minimal(show_cpu, show_mem, show_disks, show_net, args.interval, use_color, show_cpulist=args.cpulist)
+    display_monitor_minimal(show_cpu, show_mem, show_disks, show_net, args.interval, use_color, show_cpulist=args.cpulist, log_file=args.log)
 
 
 _LAST_NET_IO_COUNTERS = None
