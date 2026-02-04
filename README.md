@@ -7,7 +7,7 @@ A lightweight, htop-like system monitoring utility available in both **Python** 
 -   **Author**: Igor Brzezek <igor.brzezek@gmail.com>
 -   **GitHub**: [github.com/igorbrzezek](https://github.com/igorbrzezek)
 -   **Python Version**: 0.0.3 (2026-02-04)
--   **C Version**: 0.0.2 (2026-01-21)
+-   **C Version**: 0.0.3 (2026-02-04)
 
 ## Features
 

@@ -6,7 +6,7 @@ Additional Information:
   Author: Igor Brzezek <igor.brzezek@gmail.com>
   GitHub: github.com/igorbrzezek
   Python Version: 0.0.3 (2026-02-04)
-  C Version: 0.0.2 (2026-01-21)
+  C Version: 0.0.3 (2026-02-04)
 
 Features:
 - Real-time CPU Usage: Monitor overall CPU utilization and individual core usage.
