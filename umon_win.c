@@ -84,7 +84,7 @@
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "ws2_32.lib")
 
-#define VERSION "0.0.5"
+#define VERSION "0.0.4"
 #define AUTHOR "Igor Brzezek"
 #define DATE "04.02.2026"
 #define AUTHOR_GITHUB "github.com/igorbrzezek"
