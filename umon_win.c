@@ -1,16 +1,3 @@
-<<<<<<< HEAD
-
-#include <stdio.h>
-
-// Other includes and code...
-
-int main() {
-    // Some code...
-    printf("\033[H");
-    fflush(stdout);
-    // Some more code...
-}
-=======
 /*
  * umon_win.c - System Monitor for Windows
  * 
@@ -368,4 +355,3 @@ int main(int argc, char **argv) {
 
     return 0;
 }
->>>>>>> 021dc33 (Some improvements with the flashing screen)
