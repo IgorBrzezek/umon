@@ -7,7 +7,10 @@ A lightweight, htop-like system monitoring utility available in both **Python** 
 -   **Author**: Igor Brzezek <igor.brzezek@gmail.com>
 -   **GitHub**: [github.com/igorbrzezek](https://github.com/igorbrzezek)
 -   **Python Version**: 0.0.3 (2026-02-04)
--   **C Version**: 0.0.3 (2026-02-04)
+-   **C Version**: 0.0.4 (2026-02-04)
+
+## Changelog
+- **C version**: updated anti-flickering screen, CLI options control
 
 ## Features
 
